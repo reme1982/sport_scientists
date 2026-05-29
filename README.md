@@ -1,94 +1,100 @@
-# Sport Science Analytics with R
+# Análisis de Rendimiento Físico con R
 
-Physical performance analysis projects using GPS tracking, force plate, and wellness data — built with R as part of the **FC Barcelona Hub** diploma in Physical Data Analysis for Sport Scientists.
+Proyectos de análisis de datos físicos en fútbol — GPS, tracking y wellness — desarrollados con R como parte del diplomado **FC Barcelona Hub: Análisis de Datos Físicos para Sport Scientists**.
+
+🌐 **Portafolio en vivo:** [reme1982.github.io/sport_scientists](https://reme1982.github.io/sport_scientists)
 
 ---
 
-## Projects
+## Proyectos
 
-| # | Project | Tools | Description |
+| # | Proyecto | Herramientas | Descripción |
 |---|---|---|---|
-| S01 | [GPS Session Analysis](S01_gps_session_analysis/) | tidyverse · ggrepel · patchwork | Physical load profiling by position across two training sessions (MD-3 / MD-4) — distance, HSR, player load, z-score monitoring |
-| S02 | [Physical Fatigue — Metrica Tracking](S02_metrica_fatigue/) | tidyverse · zoo | Velocity computation from 25 Hz raw tracking data, effort zone classification, HSR fatigue index comparing 1st vs 2nd half |
-| S03 | [Wellness Monitoring Dashboard](S03_wellness_dashboard/) | Shiny · ggplot2 | Interactive Shiny app for daily player wellness tracking — Sleep & Fatigue trends with color-coded zone alerts |
+| S01 | [Análisis de Sesiones GPS](S01_gps_session_analysis/) | tidyverse · ggrepel · patchwork | Perfil de carga física por posición en sesiones de entrenamiento MD-3 / MD-4 |
+| S02 | [Fatiga Física — Tracking Metrica](S02_metrica_fatigue/) | tidyverse · zoo | Velocidad desde tracking a 25 Hz, zonas de esfuerzo, índice de fatiga 1T vs 2T |
+| S03 | [Dashboard de Wellness](S03_wellness_dashboard/) | Shiny · ggplot2 | App interactiva de monitoreo diario — Sueño, Fatiga, alertas por zona de color |
 
 ---
 
-## Project S01 — GPS Session Analysis
+## S01 — Análisis de Sesiones GPS
 
-Physical load monitoring for a professional football squad across two pre-match training sessions.
+Monitoreo de carga física de un plantel profesional en dos sesiones pre-partido.
 
-**Key findings:**
-- Wide players (EXTREMO/LATERAL) accumulate the highest HSR distances — position-specific demand
-- MD-3 shows higher load/min than MD-4 as proximity to match day increases
-- Z-score heatmap identifies outliers: players overloading or underperforming vs their position group
+**Hallazgos clave:**
+- Los extremos y laterales acumulan la mayor distancia HSR — demanda específica por posición
+- La sesión MD-3 muestra mayor carga por minuto que MD-4, conforme se acerca el partido
+- El mapa de z-scores identifica jugadores con sobrecarga o bajo rendimiento respecto a su grupo posicional
 
-**Tech:** `tidyverse` · `ggrepel` · `patchwork` · GPS data (23 metrics per session)
+📄 [Ver notebook completo →](https://reme1982.github.io/sport_scientists/S01_gps_session_analysis/GPS_Session_Analysis.html)
 
----
-
-## Project S02 — Physical Fatigue Analysis
-
-Velocity and fatigue analysis using **Metrica Sports Sample Game 1** — open tracking data at 25 Hz.
-
-**Methodology:**
-- Parse multi-header raw tracking CSV (Metrica format)
-- Convert normalized coordinates (0–1) to real pitch meters (105 × 68 m)
-- Compute velocity via Pythagorean distance between frames at 0.04 s intervals
-- Apply rolling mean (k = 5) to remove sensor noise
-- Classify 5 velocity zones: Walk / Jog / Run / HSR / Sprint
-- Compare HSR distance per player between 1st and 2nd half
-
-**Key finding:** Most players show a measurable drop in high-speed running in the second half — a normal but quantifiable fatigue pattern that informs substitution timing.
-
-**Tech:** `tidyverse` · `zoo` · `patchwork` · Metrica Sports open data
+**Stack:** `tidyverse` · `ggrepel` · `patchwork` · datos GPS (23 métricas por sesión)
 
 ---
 
-## Project S03 — Wellness Monitoring Dashboard
+## S02 — Análisis de Fatiga con Tracking Metrica Sports
 
-An interactive Shiny application for daily wellness tracking across a squad.
+Velocidad y fatiga a partir de **Metrica Sports Sample Game 1** — datos de tracking abiertos a 25 Hz.
 
-**Features:**
-- Filter by player, metric, and date range
-- Line or bar chart visualization
-- KPI summary cards with color-coded zone alerts (Green / Amber / Red)
-- Player comparison heatmap across the monitoring period
-- Traffic-light system: ≥ 7 = Good · 4–6 = Caution · < 4 = Alert
+**Metodología:**
+- Parseo de CSV crudo multi-encabezado (formato Metrica)
+- Conversión de coordenadas normalizadas (0–1) a metros reales (cancha 105 × 68 m)
+- Cálculo de velocidad por diferencia de posición a 0.04 s (25 Hz)
+- Media móvil (k = 5) para eliminar ruido del sensor
+- Clasificación en 5 zonas: Caminando / Trote / Carrera / HSR / Sprint
+- Comparación de distancia HSR por jugador entre 1er y 2do tiempo
 
-**Tech:** `shiny` · `tidyverse` · `scales`
+**Hallazgo principal:** La mayoría de los jugadores muestra una caída medible en carreras a alta velocidad durante el segundo tiempo — un patrón de fatiga normal pero cuantificable que orienta los cambios.
+
+📄 [Ver notebook completo →](https://reme1982.github.io/sport_scientists/S02_metrica_fatigue/Metrica_Fatigue_Analysis.html)
+
+**Stack:** `tidyverse` · `zoo` · `patchwork` · Metrica Sports open data
 
 ---
 
-## How to Run
+## S03 — Dashboard Interactivo de Wellness
+
+Aplicación Shiny para el monitoreo diario del bienestar del plantel.
+
+**Funcionalidades:**
+- Filtro por jugador, métrica y rango de fechas
+- Gráfico de tendencia en línea o barras
+- Tarjetas KPI con código de colores por zona (Verde / Ámbar / Rojo)
+- Mapa de calor comparativo entre jugadores en el período seleccionado
+- Sistema de semáforo: ≥ 7 Bien · 4–6 Precaución · < 4 Alerta
+
+**Stack:** `shiny` · `tidyverse` · `scales`
+
+---
+
+## Cómo ejecutar
 
 ```r
-# Install required packages
+# Instalar paquetes necesarios
 install.packages(c("tidyverse", "zoo", "patchwork", "ggrepel",
                    "scales", "shiny", "rmarkdown"))
 
-# S01 & S02 — Knit the RMarkdown notebooks in RStudio
-# S03 — Run the Shiny app
+# S01 y S02 — Abrir el .Rmd en RStudio y hacer Knit
+# S03 — Ejecutar la app Shiny
 shiny::runApp("S03_wellness_dashboard/app.R")
 ```
 
 ---
 
-## Background
+## Contexto
 
-These projects were developed as part of the **FC Barcelona Hub — Análisis de Datos Físicos con R para Sport Scientists** diploma. They apply real-world Sport Science workflows to open datasets: GPS load monitoring, raw tracking analysis, and player wellness management.
-
----
-
-## Data Sources
-
-- **GPS data:** Anonymized training session data (fictional squad)
-- **Metrica Sports tracking:** [github.com/metrica-sports/sample-data](https://github.com/metrica-sports/sample-data) — free for education and research
-- **Wellness data:** Simulated daily wellness questionnaire responses
+Estos proyectos fueron desarrollados como parte del diplomado **FC Barcelona Hub — Análisis de Datos Físicos con R para Sport Scientists**. Aplican flujos de trabajo reales de Ciencia del Deporte a datos abiertos: monitoreo de carga GPS, análisis de tracking crudo y gestión del bienestar del plantel.
 
 ---
 
-## Tech Stack
+## Fuentes de Datos
+
+- **GPS:** Datos de sesiones de entrenamiento de equipo profesional (anonimizados)
+- **Tracking:** [Metrica Sports Open Data](https://github.com/metrica-sports/sample-data) — libre para educación e investigación
+- **Wellness:** Respuestas simuladas de cuestionario diario de bienestar
+
+---
+
+## Stack Tecnológico
 
 **R** · tidyverse · ggplot2 · Shiny · zoo · patchwork · ggrepel · rmarkdown
 
@@ -96,18 +102,16 @@ These projects were developed as part of the **FC Barcelona Hub — Análisis de
 
 ---
 
-## Football Analytics con R — Ciencia del Rendimiento Físico
+# Sport Science Analytics with R
 
-Proyectos de análisis de rendimiento físico con datos GPS, tracking y wellness — desarrollados en R durante el diplomado **FC Barcelona Hub** en Análisis de Datos Físicos para Sport Scientists.
+Physical performance analysis projects using GPS tracking and wellness data — built with R as part of the **FC Barcelona Hub** diploma in Physical Data Analysis for Sport Scientists.
 
-| # | Proyecto | Herramientas | Descripción |
+🌐 **Live portfolio:** [reme1982.github.io/sport_scientists](https://reme1982.github.io/sport_scientists)
+
+| # | Project | Tools | Description |
 |---|---|---|---|
-| S01 | [Análisis de Sesiones GPS](S01_gps_session_analysis/) | tidyverse · ggrepel · patchwork | Perfil de carga física por posición en dos sesiones de entrenamiento (MD-3 / MD-4) |
-| S02 | [Fatiga Física — Tracking Metrica](S02_metrica_fatigue/) | tidyverse · zoo | Cálculo de velocidad desde datos de tracking a 25 Hz, zonas de esfuerzo, índice de fatiga 1T vs 2T |
-| S03 | [Dashboard de Wellness](S03_wellness_dashboard/) | Shiny · ggplot2 | App interactiva para monitoreo diario de wellness con alertas por zona de color |
+| S01 | [GPS Session Analysis](S01_gps_session_analysis/) | tidyverse · ggrepel · patchwork | Physical load profiling by position across MD-3 / MD-4 training sessions |
+| S02 | [Physical Fatigue — Metrica Tracking](S02_metrica_fatigue/) | tidyverse · zoo | Velocity from 25 Hz raw tracking, effort zones, HSR fatigue index 1st vs 2nd half |
+| S03 | [Wellness Monitoring Dashboard](S03_wellness_dashboard/) | Shiny · ggplot2 | Interactive Shiny app for daily squad wellness — Sleep, Fatigue, color-coded alerts |
 
-## Fuente de Datos
-
-- **Tracking:** [Metrica Sports Open Data](https://github.com/metrica-sports/sample-data) — libre para educación e investigación
-- **GPS:** Datos de sesiones de entrenamiento (equipo ficticio)
-- **Wellness:** Cuestionario diario simulado
+**Data sources:** [Metrica Sports Open Data](https://github.com/metrica-sports/sample-data) · Anonymized GPS training data · Simulated wellness questionnaire
