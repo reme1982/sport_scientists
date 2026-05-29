@@ -1,5 +1,5 @@
 ---
-title: "Physical Fatigue Analysis — Metrica Sports Tracking Data"
+title: "Análisis de Fatiga Física — Datos de Tracking Metrica Sports"
 author: "Hector Cardenas"
 date: "`r Sys.Date()`"
 output:
@@ -15,15 +15,15 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
                       fig.width = 10, fig.height = 6)
 ```
 
-## Overview
+## Introducción
 
-This project uses **Metrica Sports Sample Game 1** — a publicly available tracking dataset recorded at **25 Hz** (25 frames per second). From raw x/y coordinates we compute velocity, classify effort zones, and measure whether players show signs of physical fatigue in the second half compared to the first.
+Este proyecto utiliza el **Metrica Sports Sample Game 1** — un dataset de tracking público registrado a **25 Hz** (25 fotogramas por segundo). A partir de coordenadas x/y crudas calculamos velocidad, clasificamos zonas de esfuerzo y medimos si los jugadores muestran fatiga física en el segundo tiempo respecto al primero.
 
-**Why does this matter?** Fatigue management is central to Sport Science. Knowing which players drop off in HSR or sprint volume in the second half guides substitution timing, training load adjustments, and recovery planning.
+**¿Por qué importa?** La gestión de la fatiga es central en la Ciencia del Deporte. Saber qué jugadores reducen su producción a alta velocidad en el segundo tiempo orienta los cambios, los ajustes de carga y los protocolos de recuperación.
 
 ---
 
-## 1. Setup & Data Ingestion
+## 1. Librerías e Ingesta de Datos
 
 ```{r libraries}
 library(tidyverse)
@@ -36,112 +36,113 @@ library(ggrepel)
 ```{r load-data}
 url_home <- "https://raw.githubusercontent.com/metrica-sports/sample-data/master/data/Sample_Game_1/Sample_Game_1_RawTrackingData_Home_Team.csv"
 
-# Multi-header CSV: skip 3 rows of text headers, load numeric data only
+# CSV con múltiples encabezados: omitimos 3 filas de texto, cargamos solo datos numéricos
 raw <- read.csv(url_home, header = FALSE, skip = 3)
 
-# Define column names: Period, Frame, Time, then X/Y per player (order from file)
+# Definir nombres de columnas: Periodo, Frame, Tiempo, luego X/Y por jugador
 player_ids <- c(11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14)
-col_names <- c("Period", "Frame", "Time")
+col_names <- c("Periodo", "Frame", "Tiempo")
 for (p in player_ids) {
-  col_names <- c(col_names, paste0("P", p, "_x"), paste0("P", p, "_y"))
+  col_names <- c(col_names, paste0("J", p, "_x"), paste0("J", p, "_y"))
 }
-col_names <- c(col_names, "Ball_x", "Ball_y")
+col_names <- c(col_names, "Balon_x", "Balon_y")
 
 raw <- raw[, 1:length(col_names)]
 colnames(raw) <- col_names
 
-# Convert normalized coordinates (0–1) → real meters (105 × 68 m pitch)
+# Convertir coordenadas normalizadas (0–1) → metros reales (cancha 105 × 68 m)
 raw <- raw %>%
   mutate(across(ends_with("_x"), ~ . * 105),
          across(ends_with("_y"), ~ . * 68))
 
-cat("Loaded:", nrow(raw), "frames |", round(nrow(raw)/25/60, 1), "minutes of tracking")
+cat("Cargados:", nrow(raw), "fotogramas |", round(nrow(raw)/25/60, 1), "minutos de tracking")
 ```
 
 ---
 
-## 2. Velocity Computation
+## 2. Cálculo de Velocidad
 
-For each player we compute velocity frame-by-frame using Pythagoras on position deltas, then convert m/s → km/h. A rolling mean (k = 5 frames = 0.2 s) removes GPS noise.
+Para cada jugador calculamos la velocidad fotograma a fotograma usando Pitágoras sobre los desplazamientos de posición, luego convertimos m/s → km/h. Una media móvil (k = 5 fotogramas = 0.2 s) elimina el ruido del sensor GPS.
 
-```{r velocity-function}
-compute_velocity <- function(data, px, py) {
+```{r funcion-velocidad}
+calcular_velocidad <- function(data, px, py) {
   data %>%
-    select(Period, Frame, Time,
+    select(Periodo, Frame, Tiempo,
            x = all_of(px),
            y = all_of(py)) %>%
     filter(!is.na(x)) %>%
     mutate(
-      dx         = c(0, diff(x)),
-      dy         = c(0, diff(y)),
-      dist_m     = sqrt(dx^2 + dy^2),
-      speed_kmh  = (dist_m / 0.04) * 3.6,          # 25 Hz → 0.04 s per frame
-      speed_kmh  = pmin(speed_kmh, 40),             # cap sensor spikes
-      speed_smooth = rollmean(speed_kmh, k = 5, fill = NA, align = "center")
+      dx           = c(0, diff(x)),
+      dy           = c(0, diff(y)),
+      dist_m       = sqrt(dx^2 + dy^2),
+      vel_kmh      = (dist_m / 0.04) * 3.6,        # 25 Hz → 0.04 s por fotograma
+      vel_kmh      = pmin(vel_kmh, 40),             # limitar picos del sensor
+      vel_suavizada = rollmean(vel_kmh, k = 5, fill = NA, align = "center")
     )
 }
 ```
 
-```{r compute-all-players}
-# Compute for a selection of outfield players
-player_cols <- tibble(
-  player = paste0("Player ", player_ids),
-  px     = paste0("P", player_ids, "_x"),
-  py     = paste0("P", player_ids, "_y")
+```{r calcular-todos}
+columnas_jugadores <- tibble(
+  jugador = paste0("Jugador ", player_ids),
+  px      = paste0("J", player_ids, "_x"),
+  py      = paste0("J", player_ids, "_y")
 ) %>%
-  filter(player != "Player 11")   # exclude goalkeeper (P11)
+  filter(jugador != "Jugador 11")   # excluir portero (J11)
 
-all_players <- map2_dfr(
-  player_cols$px, player_cols$py,
-  ~ compute_velocity(raw, .x, .y) %>% mutate(player = player_cols$player[player_cols$px == .x])
+todos_jugadores <- map2_dfr(
+  columnas_jugadores$px, columnas_jugadores$py,
+  ~ calcular_velocidad(raw, .x, .y) %>%
+      mutate(jugador = columnas_jugadores$jugador[columnas_jugadores$px == .x])
 )
 
-cat("Players processed:", n_distinct(all_players$player))
+cat("Jugadores procesados:", n_distinct(todos_jugadores$jugador))
 ```
 
 ---
 
-## 3. Effort Zone Classification
+## 3. Clasificación de Zonas de Esfuerzo
 
-We classify each frame into five velocity zones used in professional GPS analysis:
+Clasificamos cada fotograma en cinco zonas de velocidad utilizadas en el análisis GPS profesional:
 
-| Zone | Label | Speed |
+| Zona | Descripción | Velocidad |
 |---|---|---|
-| Z1 | Walking | 0 – 7 km/h |
-| Z2 | Jogging | 7 – 14 km/h |
-| Z3 | Running | 14 – 21 km/h |
-| Z4 | High Speed Running | 21 – 25 km/h |
-| Z5 | Sprinting | > 25 km/h |
+| Z1 | Caminando | 0 – 7 km/h |
+| Z2 | Trote | 7 – 14 km/h |
+| Z3 | Carrera | 14 – 21 km/h |
+| Z4 | Alta Velocidad (HSR) | 21 – 25 km/h |
+| Z5 | Sprint | > 25 km/h |
 
-```{r effort-zones}
-all_players <- all_players %>%
+```{r zonas-esfuerzo}
+todos_jugadores <- todos_jugadores %>%
   mutate(
-    zone = case_when(
-      speed_smooth < 7  ~ "Z1 Walk",
-      speed_smooth < 14 ~ "Z2 Jog",
-      speed_smooth < 21 ~ "Z3 Run",
-      speed_smooth < 25 ~ "Z4 HSR",
-      TRUE              ~ "Z5 Sprint"
+    zona = case_when(
+      vel_suavizada < 7  ~ "Z1 Caminando",
+      vel_suavizada < 14 ~ "Z2 Trote",
+      vel_suavizada < 21 ~ "Z3 Carrera",
+      vel_suavizada < 25 ~ "Z4 HSR",
+      TRUE               ~ "Z5 Sprint"
     ),
-    zone = factor(zone, levels = c("Z1 Walk","Z2 Jog","Z3 Run","Z4 HSR","Z5 Sprint")),
-    is_hsr    = speed_smooth >= 21,
-    dist_m    = sqrt((c(0, diff(x)))^2 + (c(0, diff(y)))^2)
+    zona    = factor(zona, levels = c("Z1 Caminando","Z2 Trote","Z3 Carrera",
+                                       "Z4 HSR","Z5 Sprint")),
+    es_hsr  = vel_suavizada >= 21,
+    dist_m  = sqrt((c(0, diff(x)))^2 + (c(0, diff(y)))^2)
   )
 ```
 
-```{r speed-distribution}
-zone_colors <- c("Z1 Walk" = "#2ecc71", "Z2 Jog" = "#f1c40f",
-                 "Z3 Run"  = "#e67e22", "Z4 HSR" = "#e74c3c",
-                 "Z5 Sprint" = "#8e44ad")
+```{r distribucion-velocidad}
+colores_zona <- c("Z1 Caminando" = "#2ecc71", "Z2 Trote"    = "#f1c40f",
+                  "Z3 Carrera"   = "#e67e22", "Z4 HSR"      = "#e74c3c",
+                  "Z5 Sprint"    = "#8e44ad")
 
-ggplot(all_players %>% filter(!is.na(zone)), aes(x = speed_smooth, fill = zone)) +
+ggplot(todos_jugadores %>% filter(!is.na(zona)), aes(x = vel_suavizada, fill = zona)) +
   geom_histogram(bins = 80, alpha = 0.85) +
-  scale_fill_manual(values = zone_colors) +
+  scale_fill_manual(values = colores_zona) +
   scale_x_continuous(breaks = c(0, 7, 14, 21, 25, 35)) +
   labs(
-    title    = "Velocity Distribution — All Outfield Players",
-    subtitle = "Vertical lines mark zone thresholds (7 / 14 / 21 / 25 km/h)",
-    x = "Speed (km/h)", y = "Frames", fill = "Zone"
+    title    = "Distribución de Velocidades — Todos los Jugadores de Campo",
+    subtitle = "Líneas verticales marcan umbrales de zona (7 / 14 / 21 / 25 km/h)",
+    x = "Velocidad (km/h)", y = "Fotogramas", fill = "Zona"
   ) +
   geom_vline(xintercept = c(7, 14, 21, 25), linetype = "dashed", color = "gray40") +
   theme_minimal(base_size = 12)
@@ -149,83 +150,85 @@ ggplot(all_players %>% filter(!is.na(zone)), aes(x = speed_smooth, fill = zone))
 
 ---
 
-## 4. Speed Profile Over Time — Player 2
+## 4. Perfil de Velocidad en el Tiempo — Jugador 2
 
-A sample speed trace showing how intensity fluctuates across the match, with zones highlighted.
+Traza de velocidad de ejemplo que muestra cómo fluctúa la intensidad a lo largo del partido, con zonas resaltadas por color.
 
-```{r speed-trace}
-p2_data <- all_players %>%
-  filter(player == "Player 2", !is.na(speed_smooth), Period %in% c(1, 2)) %>%
-  mutate(time_min = Time / 60)
+```{r perfil-velocidad}
+j2_data <- todos_jugadores %>%
+  filter(jugador == "Jugador 2", !is.na(vel_suavizada), Periodo %in% c(1, 2)) %>%
+  mutate(tiempo_min = Tiempo / 60)
 
-ggplot(p2_data, aes(x = time_min, y = speed_smooth, color = zone)) +
+ggplot(j2_data, aes(x = tiempo_min, y = vel_suavizada, color = zona)) +
   geom_line(size = 0.5, alpha = 0.8) +
-  scale_color_manual(values = zone_colors) +
+  scale_color_manual(values = colores_zona) +
   geom_hline(yintercept = c(7, 14, 21, 25), linetype = "dashed",
              color = "gray60", size = 0.4) +
-  facet_wrap(~Period, scales = "free_x",
-             labeller = labeller(Period = c(`1` = "1st Half", `2` = "2nd Half"))) +
+  facet_wrap(~Periodo, scales = "free_x",
+             labeller = labeller(Periodo = c(`1` = "Primer Tiempo",
+                                              `2` = "Segundo Tiempo"))) +
   labs(
-    title    = "Speed Profile — Player 2",
-    subtitle = "Each color band = velocity zone",
-    x = "Time (min)", y = "Speed (km/h)", color = "Zone"
+    title    = "Perfil de Velocidad — Jugador 2",
+    subtitle = "Cada color representa una zona de esfuerzo",
+    x = "Tiempo (min)", y = "Velocidad (km/h)", color = "Zona"
   ) +
   theme_minimal(base_size = 12)
 ```
 
 ---
 
-## 5. Fatigue Analysis — HSR Distance by Half
+## 5. Análisis de Fatiga — Distancia HSR por Tiempo
 
-The core question: **do players run less at high speed in the second half?** A drop in HSR distance is the most reliable GPS indicator of physical fatigue.
+La pregunta central: **¿corren menos a alta velocidad en el segundo tiempo?** Una caída en la distancia HSR es el indicador GPS más confiable de fatiga física.
 
-```{r hsr-by-half}
-hsr_summary <- all_players %>%
-  filter(!is.na(is_hsr), Period %in% c(1, 2)) %>%
-  group_by(player, Period) %>%
+```{r hsr-por-tiempo}
+resumen_hsr <- todos_jugadores %>%
+  filter(!is.na(es_hsr), Periodo %in% c(1, 2)) %>%
+  group_by(jugador, Periodo) %>%
   summarise(
-    hsr_distance = sum(dist_m[is_hsr], na.rm = TRUE),
-    .groups = "drop"
+    dist_hsr = sum(dist_m[es_hsr], na.rm = TRUE),
+    .groups  = "drop"
   ) %>%
-  mutate(Half = ifelse(Period == 1, "1st Half", "2nd Half"))
+  mutate(Tiempo = ifelse(Periodo == 1, "Primer Tiempo", "Segundo Tiempo"))
 
-hsr_wide <- hsr_summary %>%
-  select(player, Half, hsr_distance) %>%
-  pivot_wider(names_from = Half, values_from = hsr_distance, values_fill = 0) %>%
-  mutate(
-    delta_pct = round((`2nd Half` - `1st Half`) / `1st Half` * 100, 1),
-    fatigue   = ifelse(delta_pct < 0, "Drop", "Increase")
-  )
-
-ggplot(hsr_summary, aes(x = Half, y = hsr_distance, fill = Half)) +
+ggplot(resumen_hsr, aes(x = Tiempo, y = dist_hsr, fill = Tiempo)) +
   geom_col(position = "dodge", alpha = 0.85) +
-  geom_text(aes(label = paste0(round(hsr_distance), "m")),
+  geom_text(aes(label = paste0(round(dist_hsr), "m")),
             vjust = -0.4, size = 3) +
-  scale_fill_manual(values = c("1st Half" = "#3498db", "2nd Half" = "#e74c3c")) +
-  facet_wrap(~player, ncol = 4) +
+  scale_fill_manual(values = c("Primer Tiempo" = "#3498db",
+                                "Segundo Tiempo" = "#e74c3c")) +
+  facet_wrap(~jugador, ncol = 4) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   labs(
-    title    = "HSR Distance — 1st vs 2nd Half",
-    subtitle = "A drop in the 2nd half signals physical fatigue",
-    x = NULL, y = "HSR Distance (m)", fill = NULL
+    title    = "Distancia HSR — Primer vs Segundo Tiempo",
+    subtitle = "Una caída en el 2do tiempo indica fatiga física",
+    x = NULL, y = "Distancia HSR (m)", fill = NULL
   ) +
   theme_minimal(base_size = 10) +
   theme(legend.position = "bottom", strip.text = element_text(size = 8))
 ```
 
-```{r fatigue-delta}
-ggplot(hsr_wide, aes(x = reorder(player, delta_pct), y = delta_pct, fill = fatigue)) +
+```{r indice-fatiga}
+hsr_ancho <- resumen_hsr %>%
+  select(jugador, Tiempo, dist_hsr) %>%
+  pivot_wider(names_from = Tiempo, values_from = dist_hsr, values_fill = 0) %>%
+  mutate(
+    delta_pct = round((`Segundo Tiempo` - `Primer Tiempo`) / `Primer Tiempo` * 100, 1),
+    fatiga    = ifelse(delta_pct < 0, "Caída", "Incremento")
+  )
+
+ggplot(hsr_ancho, aes(x = reorder(jugador, delta_pct), y = delta_pct, fill = fatiga)) +
   geom_col() +
   geom_text(aes(label = paste0(delta_pct, "%")),
-            hjust = ifelse(hsr_wide$delta_pct >= 0, -0.1, 1.1), size = 3.5) +
+            hjust = ifelse(hsr_ancho$delta_pct >= 0, -0.1, 1.1), size = 3.5) +
   coord_flip() +
-  scale_fill_manual(values = c("Drop" = "#e74c3c", "Increase" = "#2ecc71")) +
+  scale_fill_manual(values = c("Caída" = "#e74c3c", "Incremento" = "#2ecc71")) +
   scale_y_continuous(expand = expansion(mult = c(0.15, 0.15))) +
   geom_vline(xintercept = 0, color = "gray30") +
   labs(
-    title    = "Fatigue Index — % Change in HSR (2nd Half vs 1st Half)",
-    subtitle = "Negative = reduced high-speed output in 2nd half",
-    x = NULL, y = "% Change in HSR Distance", fill = NULL
+    title    = "Índice de Fatiga — Cambio % en HSR (2do vs 1er Tiempo)",
+    subtitle = "Negativo = menor producción a alta velocidad en el segundo tiempo",
+    x = NULL, y = "Cambio % en Distancia HSR", fill = NULL
   ) +
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom")
@@ -233,36 +236,36 @@ ggplot(hsr_wide, aes(x = reorder(player, delta_pct), y = delta_pct, fill = fatig
 
 ---
 
-## 6. Team Fatigue Summary
+## 6. Resumen del Equipo
 
-```{r team-summary}
-team_hsr <- hsr_summary %>%
-  group_by(Half) %>%
-  summarise(total_hsr = sum(hsr_distance), .groups = "drop")
+```{r resumen-equipo}
+hsr_equipo <- resumen_hsr %>%
+  group_by(Tiempo) %>%
+  summarise(hsr_total = sum(dist_hsr), .groups = "drop")
 
-avg_drop <- hsr_wide %>%
-  summarise(mean_delta = mean(delta_pct, na.rm = TRUE),
-            n_drop = sum(fatigue == "Drop"))
+promedio_caida <- hsr_ancho %>%
+  summarise(media_delta = mean(delta_pct, na.rm = TRUE),
+            n_caida     = sum(fatiga == "Caída"))
 
-cat("Team HSR — 1st Half:", round(filter(team_hsr, Half == "1st Half")$total_hsr), "m\n")
-cat("Team HSR — 2nd Half:", round(filter(team_hsr, Half == "2nd Half")$total_hsr), "m\n")
-cat("Average individual change:", avg_drop$mean_delta, "%\n")
-cat("Players showing fatigue drop:", avg_drop$n_drop, "out of", nrow(hsr_wide))
+cat("HSR Equipo — Primer Tiempo:", round(filter(hsr_equipo, Tiempo == "Primer Tiempo")$hsr_total), "m\n")
+cat("HSR Equipo — Segundo Tiempo:", round(filter(hsr_equipo, Tiempo == "Segundo Tiempo")$hsr_total), "m\n")
+cat("Cambio promedio individual:", promedio_caida$media_delta, "%\n")
+cat("Jugadores con caída de fatiga:", promedio_caida$n_caida, "de", nrow(hsr_ancho))
 ```
 
 ---
 
-## Summary
+## Conclusiones
 
-| Metric | Finding |
+| Métrica | Resultado |
 |---|---|
-| Data source | Metrica Sports Sample Game 1 — 25 Hz tracking |
-| Players analyzed | 13 outfield players |
-| HSR threshold | ≥ 21 km/h |
-| Fatigue indicator | % drop in HSR distance between halves |
-| Key takeaway | Most players show reduced high-speed output in 2nd half — a normal fatigue pattern |
+| Fuente de datos | Metrica Sports Sample Game 1 — tracking a 25 Hz |
+| Jugadores analizados | 13 jugadores de campo |
+| Umbral HSR | ≥ 21 km/h |
+| Indicador de fatiga | % de caída en distancia HSR entre tiempos |
+| Hallazgo principal | La mayoría muestra menor producción a alta velocidad en el 2do tiempo — patrón de fatiga normal y cuantificable |
 
 ---
 
-*Data: [Metrica Sports Open Data](https://github.com/metrica-sports/sample-data) — free for education and research.*
-*Analysis: R · tidyverse · zoo · patchwork · ggrepel*
+*Datos: [Metrica Sports Open Data](https://github.com/metrica-sports/sample-data) — libre para educación e investigación.*
+*Análisis: R · tidyverse · zoo · patchwork · ggrepel*
