@@ -1,0 +1,256 @@
+---
+title: "GPS Session Analysis — Physical Load Monitoring"
+author: "Hector Cardenas"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 10, fig.height = 6)
+```
+
+## Overview
+
+GPS tracking data from two training sessions (MD-3 and MD-4) of a professional football squad. The goal is to quantify physical load by **position** and **session type**, identify the most demanding players, and flag differences between training days — the kind of insight a Sport Scientist delivers daily.
+
+**Dataset:** 22 players · 2 sessions · 6 positions · 23 physical metrics
+
+---
+
+## 1. Setup & Data
+
+```{r libraries}
+library(tidyverse)
+library(ggrepel)
+library(scales)
+library(patchwork)
+```
+
+```{r load-data}
+data_gps <- read.csv("data/data_gps.csv") %>%
+  rename(
+    date          = Date,
+    player        = Name,
+    session       = Session,
+    position      = Position.Name,
+    duration_min  = Total.Duration,
+    distance_m    = Total.Distance..m.,
+    player_load   = Total.Player.Load,
+    hsr_m         = High.speed.distance..m.,
+    hsr_efforts   = High.speed.efforts,
+    sprint_m      = Sprint.distance..m.,
+    sprint_eff    = Sprints.efforts,
+    max_vel_kmh   = Maximum.Velocity..km.h.
+  ) %>%
+  filter(distance_m > 0) %>%
+  mutate(
+    load_per_min   = round(player_load / duration_min, 2),
+    hsr_ratio      = round(hsr_m / distance_m * 100, 1),
+    session        = factor(session, levels = c("MD-4", "MD-3"))
+  )
+
+glimpse(data_gps)
+```
+
+---
+
+## 2. Physical Demand by Position
+
+Players at different positions cover different distances and generate different loads. We compare **total distance**, **player load**, and **high-speed running (HSR)** across all positions.
+
+```{r position-overview, fig.height=7}
+pos_summary <- data_gps %>%
+  group_by(position) %>%
+  summarise(
+    n              = n(),
+    avg_distance   = mean(distance_m),
+    avg_load       = mean(player_load),
+    avg_hsr        = mean(hsr_m),
+    avg_max_vel    = mean(max_vel_kmh),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(avg_distance))
+
+p1 <- ggplot(pos_summary, aes(x = reorder(position, avg_distance), y = avg_distance, fill = position)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = paste0(round(avg_distance), "m")), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Average Total Distance by Position", x = NULL, y = "Distance (m)") +
+  theme_minimal(base_size = 12)
+
+p2 <- ggplot(pos_summary, aes(x = reorder(position, avg_hsr), y = avg_hsr, fill = position)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = paste0(round(avg_hsr), "m")), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Average HSR Distance by Position", x = NULL, y = "HSR Distance (m)") +
+  theme_minimal(base_size = 12)
+
+p1 / p2
+```
+
+**Key finding:** Wide players (EXTREMO/LATERAL) accumulate the most HSR, while central midfielders cover more total distance. This reflects position-specific demands: wide players sprint in behind, central mids circulate.
+
+---
+
+## 3. Session Comparison — MD-4 vs MD-3
+
+As match day approaches, training intensity typically increases. We verify this using **player load per minute** (intensity index) and **HSR ratio** (% of total distance at high speed).
+
+```{r session-comparison}
+session_summary <- data_gps %>%
+  group_by(session, position) %>%
+  summarise(
+    avg_load_min = mean(load_per_min),
+    avg_hsr_ratio = mean(hsr_ratio),
+    avg_distance = mean(distance_m),
+    .groups = "drop"
+  )
+
+p3 <- ggplot(data_gps, aes(x = session, y = load_per_min, fill = session)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 21) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 2) +
+  scale_fill_manual(values = c("MD-4" = "#4e9af1", "MD-3" = "#e05c5c")) +
+  facet_wrap(~position, nrow = 2) +
+  labs(
+    title    = "Player Load per Minute — MD-4 vs MD-3",
+    subtitle = "MD-3 (closer to match) is expected to be higher intensity",
+    x = NULL, y = "Player Load / min",
+    fill = "Session"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+
+p3
+```
+
+```{r hsr-session}
+p4 <- ggplot(data_gps, aes(x = session, y = hsr_ratio, fill = session)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.15, alpha = 0.5) +
+  scale_fill_manual(values = c("MD-4" = "#4e9af1", "MD-3" = "#e05c5c")) +
+  labs(
+    title = "% Distance at High Speed (HSR Ratio) — MD-4 vs MD-3",
+    x = NULL, y = "HSR Distance / Total Distance (%)",
+    fill = "Session"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+p4
+```
+
+---
+
+## 4. Individual Player Rankings
+
+Identifying who covered the most ground and who was most explosive across both sessions.
+
+```{r player-ranking, fig.height=8}
+player_total <- data_gps %>%
+  group_by(player, position) %>%
+  summarise(
+    total_distance = sum(distance_m),
+    total_hsr      = sum(hsr_m),
+    total_sprints  = sum(sprint_eff),
+    avg_max_vel    = mean(max_vel_kmh),
+    .groups = "drop"
+  )
+
+top_distance <- player_total %>% slice_max(total_distance, n = 10)
+
+p5 <- ggplot(top_distance, aes(x = reorder(player, total_distance),
+                               y = total_distance, fill = position)) +
+  geom_col() +
+  geom_text(aes(label = paste0(round(total_distance / 1000, 1), "km")),
+            hjust = -0.1, size = 3.2) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  labs(
+    title = "Top 10 Players — Total Distance (Both Sessions)",
+    x = NULL, y = "Total Distance (m)", fill = "Position"
+  ) +
+  theme_minimal(base_size = 11)
+
+p5
+```
+
+```{r speed-scatter}
+ggplot(player_total, aes(x = total_distance, y = total_hsr, color = position)) +
+  geom_point(size = 4, alpha = 0.8) +
+  geom_label_repel(aes(label = player), size = 2.8, max.overlaps = 12) +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    title    = "Physical Profile Map — Distance vs HSR",
+    subtitle = "Top-right quadrant = high volume AND high intensity",
+    x = "Total Distance (m)", y = "Total HSR Distance (m)",
+    color = "Position"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+---
+
+## 5. Z-Score Monitoring — Who Stands Out?
+
+Z-scores normalize each player's output against the group mean for that session and position. Values above +1.5 or below -1.5 warrant attention (overload or underperformance).
+
+```{r zscores, fig.height=7}
+z_data <- data_gps %>%
+  group_by(session, position) %>%
+  mutate(
+    z_distance  = scale(distance_m)[,1],
+    z_load      = scale(player_load)[,1],
+    z_hsr       = scale(hsr_m)[,1]
+  ) %>%
+  ungroup()
+
+z_long <- z_data %>%
+  select(player, session, position, z_distance, z_load, z_hsr) %>%
+  pivot_longer(cols = starts_with("z_"), names_to = "metric", values_to = "z") %>%
+  mutate(metric = recode(metric,
+    z_distance = "Total Distance",
+    z_load     = "Player Load",
+    z_hsr      = "HSR Distance"
+  ))
+
+ggplot(z_long %>% filter(session == "MD-3"),
+       aes(x = metric, y = reorder(player, z), fill = z)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(z, 1)), size = 3) +
+  scale_fill_gradient2(low = "#d73027", mid = "white", high = "#1a9850",
+                       midpoint = 0, limits = c(-2.5, 2.5)) +
+  labs(
+    title    = "Z-Score Heatmap — MD-3 Session",
+    subtitle = "Green = above group average | Red = below group average",
+    x = NULL, y = NULL, fill = "Z-Score"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+---
+
+## Summary
+
+| Insight | Finding |
+|---|---|
+| Most demanding position | Wide players (EXTREMO/LATERAL) — highest HSR |
+| Session intensity | MD-3 shows higher load/min vs MD-4 as expected |
+| Top volume player | See ranking chart — covers most total distance |
+| Monitoring flags | Z-score heatmap identifies outliers needing attention |
+
+---
+
+*Data: GPS tracking from professional football training sessions.*
+*Analysis: R · tidyverse · ggplot2 · ggrepel · patchwork*
