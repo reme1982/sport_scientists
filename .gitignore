@@ -2,5 +2,5 @@
 .RData
 .Rproj.user/
 *.Rproj
-**/graficos/*.png
+# graficos PNGs are tracked (portfolio screenshots)
 .secrets*/
